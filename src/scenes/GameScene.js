@@ -154,7 +154,7 @@ class GameScene extends Phaser.Scene {
 
         // Fire direction: undo the +π/2 visual correction on the sprite
         // to get the true world-space aim angle
-        const fireAngle = this.player.rotation - Math.PI / 2;
+        const fireAngle = this.player.rotation + Math.PI / 2;
         bullet.setVelocity(
             Math.cos(fireAngle) * this.BULLET_SPEED,
             Math.sin(fireAngle) * this.BULLET_SPEED
@@ -215,7 +215,7 @@ class GameScene extends Phaser.Scene {
             this.player.x, this.player.y,
             worldPoint.x,  worldPoint.y
         );
-        this.player.setRotation(aimAngle + Math.PI / 2);
+        this.player.setRotation(aimAngle - Math.PI / 2);
 
         // ---- SPACEBAR FIRE ----
         if (Phaser.Input.Keyboard.JustDown(this.keySpace)) {
