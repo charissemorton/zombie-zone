@@ -212,8 +212,13 @@ class GameScene extends Phaser.Scene {
         const bullet = this.bullets.getFirstDead(false);
         if (!bullet) return;
 
-        // Place bullet at player position and activate it
-        bullet.setPosition(this.player.x, this.player.y);
+        // Offset spawn position to the gun barrel
+        // instead of the player's center point
+        const barrelDist = 25;   // pixels from center to barrel tip
+        bullet.setPosition(
+            this.player.x + Math.cos(angle) * barrelDist,
+            this.player.y + Math.sin(angle) * barrelDist
+        );
         bullet.setActive(true);
         bullet.setVisible(true);
         bullet.setDepth(3);
