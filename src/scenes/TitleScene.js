@@ -377,14 +377,14 @@ class TitleScene extends Phaser.Scene {
 
         // --- Panel box ---
         // Centered, slightly above middle so it fits on screen
-        const panelCenterY = H / 2;
-        const panel = this.add.rectangle(W / 2, panelCenterY, 520, 400, 0x111111, 0.97)
+        const panelCenterY = H * 0.54;
+        const panel = this.add.rectangle(W / 2, panelCenterY, 580, 440, 0x111111, 0.97)
             .setDepth(11);
         panel.setStrokeStyle(2, 0x44ff44);
         this.panelItems.push(panel);
 
         // --- Panel title ---
-        const title = this.add.text(W / 2, panelCenterY - 165, 'HOW TO PLAY', {
+        const title = this.add.text(W / 2, panelCenterY - 155, 'HOW TO PLAY', {
             fontFamily: 'Arial Black, Arial',
             fontSize: '26px',
             color: '#ff4444',
@@ -395,7 +395,7 @@ class TitleScene extends Phaser.Scene {
         // --- Controls section ---
         const controls = this.add.text(
             W / 2,
-            panelCenterY - 90,
+            panelCenterY - 70,
             '— CONTROLS —\n\n' +
             'WASD / Arrow Keys    Move\n' +
             'Mouse Aim + Click    Shoot\n' +
