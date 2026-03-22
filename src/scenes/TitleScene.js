@@ -349,104 +349,139 @@ class TitleScene extends Phaser.Scene {
     // ---------------------------------------------------------
     // BUILD HOW TO PLAY PANEL
     // Called once during create() to build the panel.
-    // The panel is hidden by default — showHowToPlay() reveals it.
+    //
+    // IMPORTANT: We do NOT use a Phaser Container here.
+    // Containers hide their visual children but Zones (invisible
+    // hit areas) inside them still receive pointer events even
+    // when the container is invisible. That's what caused the
+    // panel to appear open on load.
+    //
+    // Instead, we store each element in this.panelItems[] and
+    // toggle their visibility individually. The close Zone is
+    // enabled/disabled separately with setActive().
     // ---------------------------------------------------------
     buildHowToPlayPanel(W, H) {
 
-        // Group all panel elements into a Container so we can
-        // show/hide them all at once with one setVisible() call
-        this.howToPlayContainer = this.add.container(0, 0);
+        // We'll store every visual element in this array so
+        // showHowToPlay / hideHowToPlay can loop through them
+        this.panelItems = [];
 
-        // Semi-transparent dark overlay behind the panel
-        const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.75);
+        // We store the close hit zone separately because
+        // it also needs setActive(true/false) to block/allow clicks
+        this.panelCloseZone = null;
 
-        // Panel background box
-        const panel = this.add.rectangle(W / 2, H / 2, 520, 420, 0x111111, 0.97);
-        panel.setStrokeStyle(2, 0x44ff44);  // green border
+        // --- Dark overlay (covers whole screen behind panel) ---
+        const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.80)
+            .setDepth(10);   // depth makes sure panel draws on top of everything
+        this.panelItems.push(overlay);
 
-        // Panel title
-        const title = this.add.text(W / 2, H / 2 - 175, 'HOW TO PLAY', {
+        // --- Panel box ---
+        // Centered, slightly above middle so it fits on screen
+        const panelCenterY = H / 2;
+        const panel = this.add.rectangle(W / 2, panelCenterY, 520, 400, 0x111111, 0.97)
+            .setDepth(11);
+        panel.setStrokeStyle(2, 0x44ff44);
+        this.panelItems.push(panel);
+
+        // --- Panel title ---
+        const title = this.add.text(W / 2, panelCenterY - 165, 'HOW TO PLAY', {
             fontFamily: 'Arial Black, Arial',
-            fontSize: '28px',
+            fontSize: '26px',
             color: '#ff4444',
             fontStyle: 'bold'
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(12);
+        this.panelItems.push(title);
 
-        // Controls section
-        const controls = this.add.text(W / 2, H / 2 - 110,
-            '🎮  CONTROLS\n\n' +
-            'WASD or Arrow Keys   →   Move\n' +
-            'Mouse Aim + Click    →   Shoot\n' +
-            'Q                   →   Switch Weapon\n' +
-            'ESC                  →   Pause',
+        // --- Controls section ---
+        const controls = this.add.text(
+            W / 2,
+            panelCenterY - 90,
+            '— CONTROLS —\n\n' +
+            'WASD / Arrow Keys    Move\n' +
+            'Mouse Aim + Click    Shoot\n' +
+            'Q                   Switch Weapon\n' +
+            'ESC                 Pause',
             {
                 fontFamily: 'Arial',
-                fontSize: '17px',
+                fontSize: '16px',
                 color: '#cccccc',
-                lineSpacing: 10,
+                lineSpacing: 9,
                 align: 'center'
             }
-        ).setOrigin(0.5);
+        ).setOrigin(0.5).setDepth(12);
+        this.panelItems.push(controls);
 
-        // Weapons section
-        const weapons = this.add.text(W / 2, H / 2 + 60,
-            '🔫  WEAPONS\n\n' +
+        // --- Weapons section ---
+        const weapons = this.add.text(
+            W / 2,
+            panelCenterY + 70,
+            '— WEAPONS —\n\n' +
             'Pistol  ·  Assault Rifle  ·  Knife\n' +
             'Crossbow  ·  Grenade  ·  Flashbang\n\n' +
             'Unlock weapons by collecting power-ups!',
             {
                 fontFamily: 'Arial',
-                fontSize: '16px',
+                fontSize: '15px',
                 color: '#cccccc',
                 lineSpacing: 8,
                 align: 'center'
             }
-        ).setOrigin(0.5);
+        ).setOrigin(0.5).setDepth(12);
+        this.panelItems.push(weapons);
 
-        // Close button
+        // --- Close button ---
         const closeBtnX = W / 2;
-        const closeBtnY = H / 2 + 175;
+        const closeBtnY = panelCenterY + 170;
 
-        const closeGfx = this.add.graphics();
+        const closeGfx = this.add.graphics().setDepth(12);
         closeGfx.fillStyle(0x333333, 1);
         closeGfx.fillRoundedRect(closeBtnX - 80, closeBtnY - 22, 160, 44, 10);
         closeGfx.lineStyle(2, 0x888888, 1);
         closeGfx.strokeRoundedRect(closeBtnX - 80, closeBtnY - 22, 160, 44, 10);
+        this.panelItems.push(closeGfx);
 
         const closeLabel = this.add.text(closeBtnX, closeBtnY, '✕  CLOSE', {
             fontFamily: 'Arial',
             fontSize: '18px',
             color: '#ffffff'
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(13);
+        this.panelItems.push(closeLabel);
 
-        const closeHit = this.add.zone(closeBtnX, closeBtnY, 160, 44)
+        // The zone is NOT added to panelItems — we handle it separately
+        // because setVisible doesn't disable its interactivity
+        this.panelCloseZone = this.add.zone(closeBtnX, closeBtnY, 160, 44)
+            .setDepth(13)
             .setInteractive({ useHandCursor: true });
 
-        closeHit.on('pointerdown', () => {
+        this.panelCloseZone.on('pointerdown', () => {
             this.hideHowToPlay();
         });
 
-        // Add all elements to the container
-        this.howToPlayContainer.add([
-            overlay, panel, title, controls, weapons,
-            closeGfx, closeLabel, closeHit
-        ]);
-
-        // Hide the panel until the player clicks HOW TO PLAY
-        this.howToPlayContainer.setVisible(false);
+        // --- Start hidden ---
+        // Hide all visuals and deactivate the click zone
+        this.panelItems.forEach(item => item.setVisible(false));
+        this.panelCloseZone.setActive(false).setVisible(false);
     }
 
 
     // ---------------------------------------------------------
-    // SHOW / HIDE HOW TO PLAY
-    // Simple toggle for the panel's visibility.
+    // SHOW HOW TO PLAY
+    // Makes every panel element visible and re-enables the
+    // close button's hit zone so it can receive clicks.
     // ---------------------------------------------------------
     showHowToPlay() {
-        this.howToPlayContainer.setVisible(true);
+        this.panelItems.forEach(item => item.setVisible(true));
+        this.panelCloseZone.setActive(true).setVisible(true);
     }
 
+    // ---------------------------------------------------------
+    // HIDE HOW TO PLAY
+    // Hides every panel element and disables the close zone
+    // so it can't accidentally catch clicks while invisible.
+    // ---------------------------------------------------------
     hideHowToPlay() {
-        this.howToPlayContainer.setVisible(false);
+        this.panelItems.forEach(item => item.setVisible(false));
+        this.panelCloseZone.setActive(false).setVisible(false);
     }
 
 
