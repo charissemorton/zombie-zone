@@ -221,7 +221,7 @@ class GameScene extends Phaser.Scene {
         // Calculate the firing angle from the player's current rotation.
         // We subtract π/2 because the sprite was rotated +π/2 to face
         // the cursor, so we undo that to get the true aim direction.
-        const angle = this.player.rotation - Math.PI / 2;
+        const angle = this.player.rotation;
 
         // Convert angle to X/Y velocity
         // cos(angle) = horizontal component
