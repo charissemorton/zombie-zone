@@ -1,15 +1,15 @@
 // =============================================================
 // GameScene.js
-// The main gameplay screen — this is where the actual game happens.
+// The main gameplay screen.
 //
-// Phase 3 delivers:
-//   - Tiled floor background
-//   - Player sprite that appears in the center of the screen
-//   - WASD keyboard movement
-//   - Mouse aim — the player rotates to always face the cursor
-//   - World bounds — the player can't walk off the edge
-//
-// Later phases will add: zombies, shooting, weapons, waves, UI
+// Phase 4 adds on top of Phase 3:
+//   - Bullets fired by left mouse click OR spacebar
+//   - Bullets travel in the direction the player is aiming
+//   - Bullet pool (reuses bullets instead of creating new ones
+//     every shot — better for performance)
+//   - Muzzle flash effect on shoot
+//   - Gunshot sound plays on every shot
+//   - Bullets are destroyed when they leave the world
 // =============================================================
 
 class GameScene extends Phaser.Scene {
@@ -20,137 +20,164 @@ class GameScene extends Phaser.Scene {
 
     // ---------------------------------------------------------
     // PRELOAD
-    // Load everything this scene needs before it starts.
     // ---------------------------------------------------------
     preload() {
 
-        // --- Floor tile (same one used on the title screen) ---
-        // We'll tile this across the whole game world as the floor
+        // Floor tile
         this.load.image(
             'tile_bg',
             'assets/sprites/kenney_top-down-shooter/PNG/Tiles/tile_01.png'
         );
 
-        // --- Player sprite ---
-        // survivor1_gun.png is the top-down character holding a pistol
+        // Player sprite
         this.load.image(
             'player',
             'assets/sprites/kenney_top-down-shooter/PNG/Survivor 1/survivor1_gun.png'
         );
+
+        // Gunshot sound — plays every time the player fires
+        this.load.audio('gunshot', 'assets/audio/gunshot.mp3');
+
+        // Button sound — used for UI clicks
+        this.load.audio('button', 'assets/audio/button.mp3');
     }
 
     // ---------------------------------------------------------
     // CREATE
-    // Build the scene — runs once when GameScene starts.
     // ---------------------------------------------------------
     create() {
 
-        // Store canvas size in easy variables
         const W = this.scale.width;   // 1280
         const H = this.scale.height;  // 720
 
         // =====================================================
-        // STEP 1: WORLD SIZE
-        // The "world" is bigger than the visible screen.
-        // The camera will follow the player around this world.
-        // Think of it like a large map — the camera is a window
-        // that moves around showing only part of it at a time.
+        // WORLD SIZE
         // =====================================================
-        const WORLD_W = 2560;   // world is 2x the canvas width
-        const WORLD_H = 1440;   // world is 2x the canvas height
+        const WORLD_W = 2560;
+        const WORLD_H = 1440;
 
-        // Tell Phaser how big the world is so it knows where the edges are
         this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
 
 
         // =====================================================
-        // STEP 2: TILED FLOOR BACKGROUND
-        // TileSprite repeats an image like wallpaper.
-        // We make it the full world size so the floor covers everything.
+        // TILED FLOOR BACKGROUND
         // =====================================================
         this.add.tileSprite(0, 0, WORLD_W, WORLD_H, 'tile_bg')
             .setOrigin(0, 0)
-            .setAlpha(0.4);   // dim it slightly so it reads as a floor
+            .setAlpha(0.4);
 
 
         // =====================================================
-        // STEP 3: PLAYER
-        // We create the player using Phaser's physics system.
-        // this.physics.add.sprite() is like this.add.image() but
-        // it also gives the sprite a physics body — which means
-        // Phaser tracks its velocity, handles collisions, etc.
+        // BULLET TEXTURE
+        // We draw a small yellow circle using Graphics, then
+        // bake it into a reusable texture called 'bullet'.
+        // This only needs to happen once.
         // =====================================================
+        const bulletGfx = this.add.graphics();
+        bulletGfx.fillStyle(0xffff00, 1);      // yellow
+        bulletGfx.fillCircle(4, 4, 4);          // 4px radius at center of 8x8
+        bulletGfx.generateTexture('bullet', 8, 8);
+        bulletGfx.destroy();   // texture is saved, we don't need the graphics object anymore
 
-        // Spawn the player in the center of the world
+
+        // =====================================================
+        // BULLET GROUP (Object Pool)
+        //
+        // Object pooling = create all bullets up front, reuse them.
+        // Much faster than creating/destroying a new object each shot.
+        //
+        // How it works:
+        //   - 20 bullet sprites are created right now
+        //   - All start inactive (invisible, not moving)
+        //   - When player shoots: grab an inactive one, launch it
+        //   - When bullet expires: deactivate it back into the pool
+        // =====================================================
+        this.bullets = this.physics.add.group();
+
+        for (let i = 0; i < 20; i++) {
+            const bullet = this.physics.add.image(0, 0, 'bullet');
+            bullet.setActive(false);
+            bullet.setVisible(false);
+            this.bullets.add(bullet);
+        }
+
+
+        // =====================================================
+        // PLAYER
+        // =====================================================
         this.player = this.physics.add.sprite(
-            WORLD_W / 2,   // center X of the world
-            WORLD_H / 2,   // center Y of the world
-            'player'       // the image key we loaded above
+            WORLD_W / 2,
+            WORLD_H / 2,
+            'player'
         );
-
-        // Scale the player up — the source image is small (~48px)
         this.player.setScale(2.5);
-
-        // Keep the player inside the world boundaries
-        // If this is true, the player bounces off the edges of the world
         this.player.setCollideWorldBounds(true);
-
-        // The player's physics body is a rectangle by default.
-        // We make it slightly smaller than the sprite so collisions
-        // feel fair — called "hitbox adjustment"
         this.player.body.setSize(30, 30);
 
 
         // =====================================================
-        // STEP 4: CAMERA
-        // The camera follows the player around the world.
-        // startFollow() locks the camera to a target sprite.
-        // setBounds() stops the camera from showing empty space
-        // beyond the edges of the world.
+        // CAMERA
         // =====================================================
         this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-        //                                           ^^^^^^^^^^^
-        //   The 0.1 values are "lerp" — short for linear interpolation.
-        //   Instead of snapping to the player instantly, the camera
-        //   smoothly catches up. Lower = smoother but more lag.
-
         this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
 
 
         // =====================================================
-        // STEP 5: KEYBOARD INPUT
-        // Phaser's createCursorKeys() gives us arrow keys.
-        // addKey() lets us also listen for individual keys like W/A/S/D.
+        // KEYBOARD INPUT
         // =====================================================
-
-        // Arrow keys (up/down/left/right)
-        this.cursors = this.input.keyboard.createCursorKeys();
-
-        // WASD keys — each one is stored separately
-        this.keyW = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
-        this.keyA = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
-        this.keyS = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
-        this.keyD = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
-
-        // ESC key — for pausing the game
-        this.keyESC = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+        this.cursors  = this.input.keyboard.createCursorKeys();
+        this.keyW     = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+        this.keyA     = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+        this.keyS     = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
+        this.keyD     = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
+        this.keyESC   = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+        this.keySpace = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
 
         // =====================================================
-        // STEP 6: PLAYER SPEED
-        // How many pixels per second the player moves.
-        // Stored as a property so we can change it later
-        // (e.g. a speed boost power-up just changes this number).
+        // PLAYER SPEED & FIRE RATE
         // =====================================================
         this.PLAYER_SPEED = 220;
+        this.BULLET_SPEED = 600;   // pixels per second
+
+        // Fire rate limiting — stops the player from firing
+        // hundreds of bullets per second by holding the button.
+        // lastFiredTime = when we last shot (in milliseconds)
+        // FIRE_DELAY    = minimum gap between shots (ms)
+        this.lastFiredTime = 0;
+        this.FIRE_DELAY    = 250;   // 250ms = max 4 shots/second (pistol)
 
 
         // =====================================================
-        // STEP 7: SIMPLE HUD (placeholder)
-        // A basic wave label in the top-left so the screen
-        // doesn't look completely empty. Full HUD comes later.
-        // setScrollFactor(0) pins it to the camera so it
-        // doesn't move when the player walks around.
+        // GUNSHOT SOUND
+        // =====================================================
+        this.gunshotSound = this.sound.add('gunshot', { volume: 0.6 });
+
+
+        // =====================================================
+        // MOUSE CLICK — fire on left click
+        // pointer.button === 0 means left mouse button
+        // =====================================================
+        this.input.on('pointerdown', (pointer) => {
+            if (pointer.button === 0) {
+                this.fireWeapon();
+            }
+        });
+
+
+        // =====================================================
+        // MUZZLE FLASH
+        // A bright circle that appears at the gun barrel for
+        // a split second when firing.
+        // Created once, shown briefly on each shot.
+        // =====================================================
+        this.muzzleFlash = this.add.circle(0, 0, 10, 0xffff88, 1);
+        this.muzzleFlash.setVisible(false);
+        this.muzzleFlash.setDepth(5);
+
+
+        // =====================================================
+        // PLACEHOLDER HUD
         // =====================================================
         this.add.text(20, 20, 'WAVE 1', {
             fontFamily: 'Arial Black, Arial',
@@ -158,10 +185,9 @@ class GameScene extends Phaser.Scene {
             color: '#ffffff',
             stroke: '#000000',
             strokeThickness: 4
-        }).setScrollFactor(0);   // ← this makes it stick to the screen, not the world
+        }).setScrollFactor(0);
 
-        // Small controls reminder in bottom-left
-        this.add.text(20, H - 30, 'WASD: Move   Mouse: Aim', {
+        this.add.text(20, H - 30, 'WASD: Move   Mouse / Space: Shoot', {
             fontFamily: 'Arial',
             fontSize: '14px',
             color: '#888888'
@@ -171,59 +197,93 @@ class GameScene extends Phaser.Scene {
 
 
     // ---------------------------------------------------------
-    // UPDATE
-    // Runs 60 times per second while the scene is active.
-    // This is where we check for input and move the player.
+    // FIRE WEAPON
+    // Called when the player clicks or presses spacebar.
+    // ---------------------------------------------------------
+    fireWeapon() {
+
+        // Enforce fire rate — exit if we fired too recently
+        const now = this.time.now;
+        if (now - this.lastFiredTime < this.FIRE_DELAY) return;
+        this.lastFiredTime = now;
+
+        // Get an inactive bullet from the pool
+        // getFirstDead() returns null if all bullets are in flight
+        const bullet = this.bullets.getFirstDead(false);
+        if (!bullet) return;
+
+        // Place bullet at player position and activate it
+        bullet.setPosition(this.player.x, this.player.y);
+        bullet.setActive(true);
+        bullet.setVisible(true);
+        bullet.setDepth(3);
+
+        // Calculate the firing angle from the player's current rotation.
+        // We subtract π/2 because the sprite was rotated +π/2 to face
+        // the cursor, so we undo that to get the true aim direction.
+        const angle = this.player.rotation - Math.PI / 2;
+
+        // Convert angle to X/Y velocity
+        // cos(angle) = horizontal component
+        // sin(angle) = vertical component
+        bullet.setVelocity(
+            Math.cos(angle) * this.BULLET_SPEED,
+            Math.sin(angle) * this.BULLET_SPEED
+        );
+
+        // Auto-deactivate bullet after 1.5 seconds as a safety net
+        this.time.delayedCall(1500, () => {
+            if (bullet.active) {
+                bullet.setActive(false);
+                bullet.setVisible(false);
+                bullet.setVelocity(0, 0);
+            }
+        });
+
+        // Play gunshot sound
+        this.gunshotSound.play();
+
+        // Show muzzle flash slightly in front of the player
+        const flashDist = 30;
+        this.muzzleFlash.setPosition(
+            this.player.x + Math.cos(angle) * flashDist,
+            this.player.y + Math.sin(angle) * flashDist
+        );
+        this.muzzleFlash.setVisible(true);
+
+        // Hide flash after 50ms
+        this.time.delayedCall(50, () => {
+            this.muzzleFlash.setVisible(false);
+        });
+
+    } // end fireWeapon()
+
+
+    // ---------------------------------------------------------
+    // UPDATE — runs 60 times per second
     // ---------------------------------------------------------
     update() {
 
         // =====================================================
-        // MOVEMENT
-        // We reset velocity every frame, then apply it based
-        // on which keys are held down.
-        //
-        // Velocity = speed in a direction.
-        // X velocity: negative = left, positive = right
-        // Y velocity: negative = up,   positive = down
+        // PLAYER MOVEMENT
         // =====================================================
-
-        // Reset both axes to zero (player stops if no key is held)
         this.player.setVelocity(0, 0);
 
-        // Track whether we're moving diagonally
-        // (so we can normalise speed — diagonal shouldn't be faster)
         let moveX = 0;
         let moveY = 0;
 
-        // Check left movement (A key or left arrow)
-        if (this.keyA.isDown || this.cursors.left.isDown) {
-            moveX = -1;
-        }
-        // Check right movement (D key or right arrow)
-        else if (this.keyD.isDown || this.cursors.right.isDown) {
-            moveX = 1;
-        }
+        if (this.keyA.isDown || this.cursors.left.isDown)       moveX = -1;
+        else if (this.keyD.isDown || this.cursors.right.isDown) moveX =  1;
 
-        // Check up movement (W key or up arrow)
-        if (this.keyW.isDown || this.cursors.up.isDown) {
-            moveY = -1;
-        }
-        // Check down movement (S key or down arrow)
-        else if (this.keyS.isDown || this.cursors.down.isDown) {
-            moveY = 1;
-        }
+        if (this.keyW.isDown || this.cursors.up.isDown)         moveY = -1;
+        else if (this.keyS.isDown || this.cursors.down.isDown)  moveY =  1;
 
-        // DIAGONAL SPEED FIX
-        // If moving in both X and Y at the same time, the total speed
-        // would be faster than moving in one direction (Pythagoras).
-        // Normalising keeps speed consistent in all directions.
+        // Diagonal speed normalisation
         if (moveX !== 0 && moveY !== 0) {
-            // Divide by √2 (≈0.707) to keep diagonal speed equal to straight
             moveX *= 0.707;
             moveY *= 0.707;
         }
 
-        // Apply the final velocity to the player's physics body
         this.player.setVelocity(
             moveX * this.PLAYER_SPEED,
             moveY * this.PLAYER_SPEED
@@ -232,46 +292,53 @@ class GameScene extends Phaser.Scene {
 
         // =====================================================
         // MOUSE AIM
-        // The player sprite rotates to always point toward
-        // the mouse cursor.
-        //
-        // Phaser's Math.Angle.Between() calculates the angle
-        // (in radians) between two points.
-        //
-        // We use getWorldPoint() to convert the mouse's screen
-        // position into world coordinates — important because
-        // the camera is moving around a larger world.
         // =====================================================
-
-        // Get the mouse position in WORLD coordinates
-        // (not screen coordinates — they're different when camera moves)
-        const pointer = this.input.activePointer;
+        const pointer    = this.input.activePointer;
         const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-
-        // Calculate the angle from the player to the mouse
-        const angle = Phaser.Math.Angle.Between(
-            this.player.x, this.player.y,   // from: player position
-            worldPoint.x,  worldPoint.y     // to:   mouse position
+        const angle      = Phaser.Math.Angle.Between(
+            this.player.x, this.player.y,
+            worldPoint.x,  worldPoint.y
         );
-
-        // Apply the rotation to the player sprite
-        // We add 90 degrees (π/2 radians) because the sprite
-        // faces UP by default, but Phaser's angle 0 points RIGHT.
-        // Adding 90° corrects this offset.
         this.player.setRotation(angle + Math.PI / 2);
 
 
         // =====================================================
+        // SPACEBAR FIRE
+        // JustDown = fires once per keypress, not every frame
+        // =====================================================
+        if (Phaser.Input.Keyboard.JustDown(this.keySpace)) {
+            this.fireWeapon();
+        }
+
+
+        // =====================================================
+        // CLEAN UP OUT-OF-BOUNDS BULLETS
+        // Any bullet that has left the world gets returned
+        // to the pool so it can be reused.
+        // =====================================================
+        this.bullets.getChildren().forEach(bullet => {
+            if (!bullet.active) return;
+
+            const b = this.physics.world.bounds;
+            if (
+                bullet.x < b.x ||
+                bullet.x > b.x + b.width ||
+                bullet.y < b.y ||
+                bullet.y > b.y + b.height
+            ) {
+                bullet.setActive(false);
+                bullet.setVisible(false);
+                bullet.setVelocity(0, 0);
+            }
+        });
+
+
+        // =====================================================
         // PAUSE
-        // If ESC is pressed, launch the PauseScene on top of
-        // this scene (the game keeps running underneath,
-        // but we'll fix that in the PauseScene).
-        // Phaser.Input.Keyboard.JustDown() fires only once
-        // per keypress — not every frame while held.
         // =====================================================
         if (Phaser.Input.Keyboard.JustDown(this.keyESC)) {
-            this.scene.pause();              // freeze this scene
-            this.scene.launch('PauseScene'); // open pause menu on top
+            this.scene.pause();
+            this.scene.launch('PauseScene');
         }
 
     } // end update()
